@@ -79,7 +79,7 @@ jobs:
 
       - name: Publish binaries for ${{ env.sui_tag }} release
         if: ${{ env.sui_tag != 'main' }}
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.sui_tag }}
           files: |
