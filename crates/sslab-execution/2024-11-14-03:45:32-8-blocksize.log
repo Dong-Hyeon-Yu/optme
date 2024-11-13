@@ -1,0 +1,37 @@
+warning: unused variable: `account_num`
+  --> crates/sslab-execution/optme/benches/vanilla.rs:30:5
+   |
+30 |     account_num: u64,
+   |     ^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_account_num`
+   |
+   = note: `#[warn(unused_variables)]` on by default
+
+warning: `sslab-execution-optme` (bench "vanilla") generated 1 warning (run `cargo fix --bench "vanilla"` to apply 1 suggestion)
+    Finished bench [optimized + debuginfo] target(s) in 0.47s
+warning: the following packages contain code that will be rejected by a future version of Rust: nom v5.1.2
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running unittests src/lib.rs (/home/sslab/optme/target/release/deps/sslab_execution_optme-d28614baff70a30b)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 10 filtered out; finished in 0.00s
+
+     Running benches/parallelism.rs (/home/sslab/optme/target/release/deps/parallelism-a7c9fb35104594fb)
+Gnuplot not found, using plotters backend
+     Running benches/vanilla.rs (/home/sslab/optme/target/release/deps/vanilla-0e4b931f21b33bc5)
+Gnuplot not found, using plotters backend
+Benchmarking Vanilla/blocksize/(zipfian: 0.7, block_concurrency: 16)
+Benchmarking Vanilla/blocksize/(zipfian: 0.7, block_concurrency: 16): Warming up for 3.0000 s
+
+Warning: Unable to complete 100 samples in 5.0s. You may wish to increase target time to 7.7s, or reduce sample count to 60.
+Benchmarking Vanilla/blocksize/(zipfian: 0.7, block_concurrency: 16): Collecting 100 samples in estimated 7.6893 s (100 iterations)
+Benchmarking Vanilla/blocksize/(zipfian: 0.7, block_concurrency: 16): Analyzing
+Vanilla/blocksize/(zipfian: 0.7, block_concurrency: 16)
+                        time:   [16.122 ms 16.246 ms 16.379 ms]
+                        change: [-39.371% -38.868% -38.313%] (p = 0.00 < 0.05)
+                        Performance has improved.
+Found 16 outliers among 100 measurements (16.00%)
+  11 (11.00%) high mild
+  5 (5.00%) high severe
+Ktps: 153.9684
+

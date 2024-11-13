@@ -1,0 +1,25 @@
+    Finished bench [optimized + debuginfo] target(s) in 0.46s
+warning: the following packages contain code that will be rejected by a future version of Rust: nom v5.1.2
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running unittests src/lib.rs (/home/sslab/optme/target/release/deps/sslab_execution_optme-130f23060d39617b)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 10 filtered out; finished in 0.00s
+
+     Running benches/optme.rs (/home/sslab/optme/target/release/deps/optme-391364fcd523e095)
+Gnuplot not found, using plotters backend
+Benchmarking OptME/blocksize/(zipfian: 0.7, block_concurrency: 16)
+Benchmarking OptME/blocksize/(zipfian: 0.7, block_concurrency: 16): Warming up for 3.0000 s
+
+Warning: Unable to complete 100 samples in 5.0s. You may wish to increase target time to 6.7s, or reduce sample count to 70.
+Benchmarking OptME/blocksize/(zipfian: 0.7, block_concurrency: 16): Collecting 100 samples in estimated 6.6751 s (100 iterations)
+Benchmarking OptME/blocksize/(zipfian: 0.7, block_concurrency: 16): Analyzing
+OptME/blocksize/(zipfian: 0.7, block_concurrency: 16)
+                        time:   [14.974 ms 15.255 ms 15.556 ms]
+                        thrpt:  [205.71 Kelem/s 209.76 Kelem/s 213.71 Kelem/s]
+                 change:
+                        time:   [-20.759% -19.230% -17.513%] (p = 0.00 < 0.05)
+                        thrpt:  [+21.232% +23.808% +26.197%]
+                        Performance has improved.
+

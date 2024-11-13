@@ -1,0 +1,28 @@
+    Finished bench [optimized + debuginfo] target(s) in 0.46s
+warning: the following packages contain code that will be rejected by a future version of Rust: nom v5.1.2
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running unittests src/lib.rs (/home/sslab/optme/target/release/deps/sslab_execution_blockstm-f223ecad6a33e9d4)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 18 filtered out; finished in 0.00s
+
+     Running benches/performance_benches.rs (/home/sslab/optme/target/release/deps/performance_benches-140772f54defd77b)
+Gnuplot not found, using plotters backend
+Benchmarking BlockSTM/blocksize/zipfian: 0.7, #batch: 16
+Benchmarking BlockSTM/blocksize/zipfian: 0.7, #batch: 16: Warming up for 3.0000 s
+
+Warning: Unable to complete 100 samples in 5.0s. You may wish to increase target time to 7.9s, or reduce sample count to 60.
+Benchmarking BlockSTM/blocksize/zipfian: 0.7, #batch: 16: Collecting 100 samples in estimated 7.9455 s (100 iterations)
+Benchmarking BlockSTM/blocksize/zipfian: 0.7, #batch: 16: Analyzing
+BlockSTM/blocksize/zipfian: 0.7, #batch: 16
+                        time:   [31.020 ms 31.727 ms 32.502 ms]
+                        thrpt:  [98.456 Kelem/s 100.86 Kelem/s 103.16 Kelem/s]
+                 change:
+                        time:   [-10.167% -6.9344% -3.8114%] (p = 0.00 < 0.05)
+                        thrpt:  [+3.9625% +7.4511% +11.318%]
+                        Performance has improved.
+Found 20 outliers among 100 measurements (20.00%)
+  3 (3.00%) high mild
+  17 (17.00%) high severe
+

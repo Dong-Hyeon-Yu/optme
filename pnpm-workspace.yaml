@@ -1,0 +1,8 @@
+packages:
+    - 'sdk/**'
+    - 'apps/**'
+    - 'dapps/**'
+    - '!**/dist/**'
+    - '!sdk/typescript/builder'
+    - '!sdk/typescript/faucet'
+    - '!sdk/typescript/*/**'
