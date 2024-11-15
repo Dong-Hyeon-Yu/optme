@@ -389,6 +389,7 @@ impl AbortInfo {
         }
     }
 
+    #[inline]
     pub fn write_keys(&self) -> hashbrown::HashSet<H256> {
         self.prev_write_keys
             .values()
@@ -397,6 +398,7 @@ impl AbortInfo {
             .collect()
     }
 
+    #[inline]
     pub fn read_keys(&self) -> hashbrown::HashSet<H256> {
         self.prev_read_keys
             .values()
@@ -405,14 +407,17 @@ impl AbortInfo {
             .collect()
     }
 
+    #[inline]
     pub fn prev_write_map(&self) -> &BTreeMap<H160, HashMap<H256, H256>> {
         &self.prev_write_keys
     }
 
+    #[inline]
     pub fn prev_read_map(&self) -> &BTreeMap<H160, HashMap<H256, H256>> {
         &self.prev_read_keys
     }
 
+    #[inline]
     pub fn aborted(&self) -> bool {
         self.aborted
     }
@@ -421,23 +426,18 @@ impl AbortInfo {
 #[derive(Debug)]
 pub struct Transaction {
     tx_id: u64,
-    sequence: RwLock<u64>, // 0 represents that this transaction havn't been ordered yet.
-    pub abort_info: RwLock<AbortInfo>,
+    sequence: RwLock<u32>, // 0 represents that this transaction havn't been ordered yet.
+    pub(crate) abort_info: RwLock<AbortInfo>,
     write_units: RwLock<Vec<Arc<Unit>>>,
 
     effects: Vec<Apply>,
     logs: Vec<Log>,
-    raw_tx: IndexedEthereumTransaction,
+    pub(crate) raw_tx: IndexedEthereumTransaction,
 }
 
 impl Transaction {
     pub fn from(tx: SimulatedTransaction) -> (Self, RwSet) {
         let (tx_id, rw_set, effects, logs, raw_tx) = tx.deconstruct();
-
-        let rw_set = match rw_set {
-            Some(rw_set) => rw_set,
-            None => Default::default(),
-        };
 
         let tx = Self {
             tx_id,
@@ -452,56 +452,68 @@ impl Transaction {
         (tx, rw_set)
     }
 
+    #[inline]
     pub fn init(&self) {
         *self.sequence.write() = 0;
         let mut abort_info = self.abort_info.write();
         abort_info.aborted = false;
     }
 
+    #[inline]
     pub fn id(&self) -> u64 {
         self.tx_id
     }
 
-    pub fn sequence(&self) -> u64 {
+    #[inline]
+    pub fn sequence(&self) -> u32 {
         self.sequence.read().to_owned()
     }
 
+    #[inline]
     pub fn simulation_result(&self) -> (Vec<Apply>, Vec<Log>) {
         (self.effects.clone(), self.logs.clone())
     }
 
+    #[inline]
     fn set_write_units(&self, write_units: Vec<Arc<Unit>>) {
         let mut my_units = self.write_units.write();
         write_units.into_iter().for_each(|u| my_units.push(u));
     }
 
+    #[inline]
     pub(crate) fn clear_write_units(&self) {
         let mut my_units = self.write_units.write();
         my_units.clear();
         my_units.shrink_to_fit();
     }
 
+    #[inline]
     fn abort(&self) {
         let mut info = self.abort_info.write();
         info.aborted = true;
     }
 
+    #[inline]
     fn aborted(&self) -> bool {
         self.abort_info.read().aborted
     }
 
-    fn set_sequence(&self, sequence: u64) {
+    #[inline]
+    fn set_sequence(&self, sequence: u32) {
         *self.sequence.write() = sequence;
     }
 
+    #[inline]
     fn is_sorted(&self) -> bool {
         *self.sequence.read() != 0 || self.aborted()
     }
 
+    #[inline]
     fn reorderable(&self) -> bool {
         self._is_write_only() && (self.write_units.read().len() > 1)
     }
 
+    #[inline]
     fn _is_write_only(&self) -> bool {
         self.write_units
             .read()
@@ -509,19 +521,36 @@ impl Transaction {
             .all(|unit| unit.degree() == 0 && !unit.co_located())
     }
 
+    #[inline]
     fn write_units(&self) -> RwLockReadGuard<Vec<Arc<Unit>>> {
         self.write_units.read()
     }
 
+    #[inline]
     pub fn raw_tx(&self) -> &IndexedEthereumTransaction {
         &self.raw_tx
     }
 
+    #[inline]
     pub fn rw_set(&self) -> (hashbrown::HashSet<H256>, hashbrown::HashSet<H256>) {
         (
             self.abort_info.read().read_keys(),
             self.abort_info.read().write_keys(),
         )
+    }
+
+    #[inline]
+    pub(crate) fn deconstruct(self) -> (u64, u32, Vec<Apply>, Vec<Log>) {
+        let Self {
+            tx_id,
+            sequence,
+            effects,
+            logs,
+            ..
+        } = self;
+        let seq = sequence.read().clone();
+
+        (tx_id, seq, effects, logs)
     }
 }
 
@@ -551,40 +580,49 @@ impl Unit {
         }
     }
 
+    #[inline]
     fn unit_type(&self) -> &UnitType {
         &self.unit_type
     }
 
+    #[inline]
     fn address(&self) -> &H256 {
         &self.address
     }
 
+    #[inline]
     fn degree(&self) -> u32 {
         *self.wr_dependencies.read()
     }
 
+    #[inline]
     fn add_dependency(&self) {
         let mut degree = self.wr_dependencies.write();
         *degree += 1;
     }
 
+    #[inline]
     fn is_sorted(&self) -> bool {
         self.tx.is_sorted()
     }
 
-    fn sequence(&self) -> u64 {
+    #[inline]
+    fn sequence(&self) -> u32 {
         self.tx.sequence()
     }
 
-    fn set_sequence(&self, sequence: u64) {
+    #[inline]
+    fn set_sequence(&self, sequence: u32) {
         self.tx.set_sequence(sequence);
     }
 
+    #[inline]
     // abort a transaction that makes the anti-rw conflict, resulting in a cycle at ACG.
     fn abort_tx(&self) {
         self.tx.abort();
     }
 
+    #[inline]
     fn co_located(&self) -> bool {
         self.co_located
     }
@@ -593,7 +631,7 @@ impl Unit {
 #[derive(Clone, Debug)]
 struct ReadUnits {
     units: Vec<Arc<Unit>>,
-    max_seq: u64,
+    max_seq: u32,
 }
 
 impl ReadUnits {
@@ -604,11 +642,13 @@ impl ReadUnits {
         }
     }
 
+    #[inline]
     fn push(&mut self, unit: Arc<Unit>) {
         self.units.push(unit);
     }
 
     /* (Algorithm2) line 3 ~ 15 */
+    #[inline]
     fn sort(&mut self) {
         /* (Algorithm2) line 3*/
         let units = std::mem::take(&mut self.units);
@@ -647,12 +687,14 @@ impl ReadUnits {
         self.units = sorted;
     }
 
-    fn increment_and_get_max_seq(&mut self) -> u64 {
+    #[inline]
+    fn increment_and_get_max_seq(&mut self) -> u32 {
         self.max_seq += 1;
         self.max_seq
     }
 
-    fn max_seq(&self) -> u64 {
+    #[inline]
+    fn max_seq(&self) -> u32 {
         self.max_seq
     }
 }
@@ -660,7 +702,7 @@ impl ReadUnits {
 #[derive(Clone, Debug)]
 struct WriteUnits {
     units: Vec<Arc<Unit>>,
-    max_seq: u64,
+    max_seq: u32,
     first_updater_flag: bool,
 }
 
@@ -673,11 +715,13 @@ impl WriteUnits {
         }
     }
 
+    #[inline]
     fn push(&mut self, unit: Arc<Unit>) {
         self.units.push(unit);
     }
 
     /* (Algorithm2) line 16 ~ 35 */
+    #[inline]
     fn sort(&mut self, read_units: &mut ReadUnits) {
         /* (Algorithm2) line 16 */
         let units = std::mem::take(&mut self.units);
@@ -721,7 +765,7 @@ impl WriteUnits {
         let mut write_seq = read_units.increment_and_get_max_seq();
 
         /* (Algorithm2) line 30 ~ 35 */
-        let mut write_seq_set: FastHashSet<u64> =
+        let mut write_seq_set: FastHashSet<u32> =
             sorted.iter().map(|unit| unit.sequence()).collect();
         remaining.iter_mut().for_each(|unit| {
             while write_seq_set.contains(&write_seq) {
@@ -737,7 +781,8 @@ impl WriteUnits {
         self.units = sorted;
     }
 
-    fn max_seq(&self) -> u64 {
+    #[inline]
+    fn max_seq(&self) -> u32 {
         self.max_seq
     }
 }
@@ -764,18 +809,22 @@ impl Address {
         }
     }
 
+    #[inline]
     fn in_degree(&self) -> &u32 {
         &self.in_degree
     }
 
+    #[inline]
     fn out_degree(&self) -> &u32 {
         &self.out_degree
     }
 
+    #[inline]
     fn address(&self) -> &H256 {
         &self.address
     }
 
+    #[inline]
     fn add_unit(&mut self, unit: Arc<Unit>) {
         match unit.unit_type() {
             UnitType::Read => {
@@ -792,14 +841,17 @@ impl Address {
         }
     }
 
+    #[inline]
     fn sort_read_units(&mut self) {
         self.read_units.sort();
     }
 
+    #[inline]
     fn sort_write_units(&mut self) {
         self.write_units.sort(&mut self.read_units);
     }
 
+    #[inline]
     fn merge(&mut self, other: Self) {
         // unwind
         if self.first_updater_flag && other.first_updater_flag {

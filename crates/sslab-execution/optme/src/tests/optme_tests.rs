@@ -3,6 +3,7 @@ use std::str::FromStr;
 use ethers_core::types::{H160, H256};
 use evm::executor::stack::{RwSet, Simulatable};
 use hashbrown::HashSet;
+use itertools::Itertools;
 use sslab_execution::types::{EthereumTransaction, IndexedEthereumTransaction};
 
 use crate::{
@@ -25,7 +26,7 @@ fn transaction_with_rw(tx_id: u64, read_addr: u64, write_addr: u64) -> Simulated
         H256::from_low_u64_be(1),
     );
     SimulatedTransaction::new(
-        Some(set),
+        set,
         Vec::new(),
         Vec::new(),
         IndexedEthereumTransaction::new(EthereumTransaction::default(), tx_id),
@@ -53,7 +54,7 @@ fn transaction_with_multiple_rw(
         );
     });
     SimulatedTransaction::new(
-        Some(set),
+        set,
         Vec::new(),
         Vec::new(),
         IndexedEthereumTransaction::new(EthereumTransaction::default(), tx_id),
@@ -81,7 +82,7 @@ fn transaction_with_multiple_rw_str(
         );
     });
     SimulatedTransaction::new(
-        Some(set),
+        set,
         Vec::new(),
         Vec::new(),
         IndexedEthereumTransaction::new(EthereumTransaction::default(), tx_id),
@@ -123,22 +124,21 @@ fn optme_test(
 
     scheduled_txs
         .iter()
-        .zip(s_ans.iter())
+        .map(|tx| tx.iter().map(|tx| tx.id()).collect_vec())
+        .zip(s_ans)
         .for_each(|(txs, idx)| {
             assert_eq!(txs.len(), idx.len());
-            let answer_set: HashSet<&u64> = idx.iter().collect();
-            assert!(txs.iter().all(|tx| answer_set.contains(&tx.id())))
+            assert_eq!(txs, idx);
         });
 
-    aborted_txs.iter().zip(a_ans.iter()).for_each(|(txs, idx)| {
-        assert_eq!(txs.len(), idx.len());
-        let answer_set: HashSet<&u64> = idx.iter().collect();
-        assert!(txs.iter().all(|tx| answer_set.contains(&tx.id())))
-    });
-
-    aborted_txs.into_iter().flatten().for_each(|tx| {
-        std::sync::Arc::try_unwrap(tx).unwrap();
-    })
+    aborted_txs
+        .iter()
+        .map(|tx| tx.iter().map(|tx| tx.id()).collect_vec())
+        .zip(a_ans)
+        .for_each(|(txs, idx)| {
+            assert_eq!(txs.len(), idx.len());
+            assert_eq!(txs, idx);
+        });
 }
 
 async fn optme_par_test(
@@ -179,6 +179,8 @@ async fn optme_par_test(
         .iter()
         .zip(s_ans.iter())
         .for_each(|(txs, idx)| {
+            // println!("output: {:#?}", txs);
+            // println!("answer: {:#?}", idx);
             assert_eq!(txs.len(), idx.len());
             let answer_set: HashSet<&u64> = idx.iter().collect();
             assert!(txs.iter().all(|tx| answer_set.contains(&tx.id())))
@@ -189,10 +191,6 @@ async fn optme_par_test(
         let answer_set: HashSet<&u64> = idx.iter().collect();
         assert!(txs.iter().all(|tx| answer_set.contains(&tx.id())))
     });
-
-    aborted_txs.into_iter().flatten().for_each(|tx| {
-        std::sync::Arc::try_unwrap(tx).unwrap();
-    })
 }
 
 #[tokio::test]
