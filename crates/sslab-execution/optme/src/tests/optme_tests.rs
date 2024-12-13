@@ -323,9 +323,9 @@ async fn test_reordering() {
     optme_test(
         txs.clone(),
         (first_scheduled.clone(), second_scheduled.clone()),
-        false,
+        true,
     );
-    optme_par_test(txs.clone(), (first_scheduled, second_scheduled), false).await;
+    optme_par_test(txs.clone(), (first_scheduled, second_scheduled), true).await;
 }
 
 #[tokio::test]

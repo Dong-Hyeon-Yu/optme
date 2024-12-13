@@ -728,45 +728,54 @@ impl WriteUnits {
         let (mut sorted, mut remaining): (Vec<Arc<Unit>>, Vec<Arc<Unit>>) =
             units.into_iter().partition(|unit| unit.is_sorted());
 
-        /* (Algorithm2) line 17 ~ 19 */
-        sorted
-            .iter()
-            .filter(|unit| !unit.tx.aborted())
-            .for_each(|unit| {
-                if unit.co_located() {
-                    if cfg!(feature = "last-committer-wins") {
-                        unit.set_sequence(read_units.increment_and_get_max_seq());
-                    } else {
-                        match self.first_updater_flag {
-                            false => {
-                                // First updater wins
-                                unit.set_sequence(read_units.increment_and_get_max_seq());
-                                self.first_updater_flag = true;
-                            }
-                            true => {
-                                unit.abort_tx();
+        let mut write_seq;
+        if read_units.units.iter().any(|unit| !unit.tx.aborted()) {
+            /* (Algorithm2) line 17 ~ 19 */
+            sorted
+                .iter()
+                .filter(|unit| !unit.tx.aborted())
+                .for_each(|unit| {
+                    if unit.co_located() {
+                        if cfg!(feature = "last-committer-wins") {
+                            unit.set_sequence(read_units.increment_and_get_max_seq());
+                        } else {
+                            match self.first_updater_flag {
+                                false => {
+                                    // First updater wins
+                                    unit.set_sequence(read_units.increment_and_get_max_seq());
+                                    self.first_updater_flag = true;
+                                }
+                                true => {
+                                    unit.abort_tx();
+                                }
                             }
                         }
                     }
-                }
-            });
+                });
 
-        /* (Algorithm2) line 20 ~ 24 */
-        sorted
-            .iter()
-            .filter(|unit| !unit.tx.aborted())
-            .for_each(|unit| {
-                if unit.sequence() < read_units.max_seq() {
-                    unit.abort_tx();
-                }
-            });
+            /* (Algorithm2) line 20 ~ 24 */
+            sorted
+                .iter()
+                .filter(|unit| !unit.tx.aborted())
+                .for_each(|unit| {
+                    if unit.sequence() < read_units.max_seq() {
+                        unit.abort_tx();
+                    }
+                });
 
-        /* (Algorithm2) line 25 ~ 29 */
-        let mut write_seq = read_units.increment_and_get_max_seq();
+            /* (Algorithm2) line 25 ~ 29 */
+            write_seq = read_units.increment_and_get_max_seq();
+        } else {
+            /* (Algorithm2) line 25 ~ 29 */
+            write_seq = 1;
+        }
 
         /* (Algorithm2) line 30 ~ 35 */
-        let mut write_seq_set: FastHashSet<u32> =
-            sorted.iter().map(|unit| unit.sequence()).collect();
+        let mut write_seq_set: FastHashSet<u32> = sorted
+            .iter()
+            // .filter(|unit| !unit.tx.aborted())
+            .map(|unit| unit.sequence())
+            .collect();
         remaining.iter_mut().for_each(|unit| {
             while write_seq_set.contains(&write_seq) {
                 write_seq += 1;

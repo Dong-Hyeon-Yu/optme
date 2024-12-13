@@ -1,15 +1,14 @@
 use criterion::{criterion_group, criterion_main, BatchSize, Criterion};
 use ethers_providers::{MockProvider, Provider};
+use itertools::Itertools;
 use parking_lot::RwLock;
 use sslab_execution::{
-    types::ExecutableEthereumBatch,
-    utils::smallbank_contract_benchmark::concurrent_evm_storage,
-    utils::test_utils::{SmallBankTransactionHandler, DEFAULT_CHAIN_ID},
+    types::{ExecutableEthereumBatch, IndexedEthereumTransaction},
+    utils::{smallbank_contract_benchmark::concurrent_evm_storage, test_utils::{SmallBankTransactionHandler, DEFAULT_CHAIN_ID}},
 };
 
 use sslab_execution_optme::{
-    address_based_conflict_graph::Benchmark as _, optme_core::Benchmark, optme_core::ScheduledInfo,
-    AddressBasedConflictGraph, ConcurrencyLevelManager, SimulatedTransaction, SimulationResult,
+    address_based_conflict_graph::Benchmark as _, optme_core::{Benchmark, ScheduledInfo}, types::AbortedTransaction, AddressBasedConflictGraph, ConcurrencyLevelManager, SimulatedTransaction, SimulationResult
 };
 const DEFAULT_BATCH_SIZE: usize = 200;
 const DEFAULT_ACCOUNT_NUM: u64 = 100_000;
@@ -332,11 +331,130 @@ fn tps_of_last_committer_wins_rule(c: &mut Criterion) {
     }
 }
 
+fn count_the_number_of_naive_repeatition(c: &mut Criterion) {
+    let s = [0.0, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0];
+    let param = 80..81;
+    let mut group = c.benchmark_group("Vanilla");
+
+    for i in param {
+        for zipfian in s {
+            let cnt_metrics = std::sync::Arc::new(RwLock::new(Vec::new()));
+
+            group.bench_with_input(
+                criterion::BenchmarkId::new(
+                    "Nezha-naive-repeatition",
+                    format!("(zipfian: {}, block_size: {})", zipfian, i),
+                ),
+                &(i, cnt_metrics.clone()),
+                |b, (i, metrics)| {
+                    b.to_async(tokio::runtime::Runtime::new().unwrap())
+                        .iter_batched(
+                            || {
+                                let consensus_output = _create_random_smallbank_workload(
+                                    zipfian,
+                                    DEFAULT_BATCH_SIZE,
+                                    *i,
+                                    DEFAULT_ACCOUNT_NUM,
+                                );
+                                let optme = std::sync::Arc::new(_get_optme_executor(*i));
+                                (optme, consensus_output)
+                            },
+                            |(optme, consensus_output)| async move {
+
+                                let mut repeatition = 1u32;
+                                let mut remains;
+
+                                {
+                                    let result = optme.simulate(consensus_output).await;
+                                    let ScheduledInfo {
+                                        scheduled_txs,
+                                        aborted_txs,
+                                    } = AddressBasedConflictGraph::construct_without_early_detection(
+                                        result.rw_sets,
+                                    )
+                                    .hierarchcial_sort()
+                                    .reorder()
+                                    .par_extract_schedule()
+                                    .await;
+
+                                    optme._concurrent_commit(scheduled_txs).await;
+
+                                    remains = aborted_txs;
+                                }
+
+                                
+                                while remains.len() > 0  {
+                                    
+                                    if remains.len() > 1 {
+                                        panic!("Vanilla version does not generate multi-sequence aborted schedules");
+                                    }
+
+                                    let txs = remains.pop().unwrap();
+                                    // println!("(epoch {}) txs len {:?}", repeatition, txs.len());
+                                    if txs.is_empty() {
+                                        break;
+                                    }
+                                    let batch = wrap_to_batch(txs);
+                                    // println!("(epoch {}) batch len {:?}", repeatition, batch.data().len());
+
+                                    let result = optme.simulate(vec![batch]).await;
+                                    let ScheduledInfo {
+                                        scheduled_txs,
+                                        aborted_txs,
+                                    } = AddressBasedConflictGraph::construct_without_early_detection(
+                                        result.rw_sets,
+                                    )
+                                    .hierarchcial_sort()
+                                    .reorder()
+                                    .par_extract_schedule()
+                                    .await;
+
+                                    if !aborted_txs.is_empty() && scheduled_txs.is_empty() {
+                                        panic!("endless loop!");
+                                    }
+
+                                    optme._concurrent_commit(scheduled_txs).await;
+                                    
+                                    remains = aborted_txs;
+
+                                    repeatition += 1;
+                                }
+                                
+                                metrics.write().push(repeatition);
+                            },
+                            BatchSize::SmallInput,
+                        );
+                },
+            );
+
+            let mut count = 0f64;
+            if cnt_metrics.read().is_empty() {
+                continue;
+            }
+            let len = cnt_metrics.read().len() as f64;
+
+            for a1 in cnt_metrics.read().iter() {
+                count += *a1 as f64;
+            }
+
+            println!("count: {:.4}", (count / len));
+        }
+    }
+}
+
 criterion_group!(
     benches,
     parallelism_of_last_committer_wins_rule,
     tps_of_last_committer_wins_rule,
     vanilla_tps_blocksize,
-    vanilla_tps_skewness
+    vanilla_tps_skewness,
+    count_the_number_of_naive_repeatition
 );
 criterion_main!(benches);
+
+
+fn wrap_to_batch(txs: Vec<AbortedTransaction>) -> ExecutableEthereumBatch {
+    let ether_txs = txs.into_iter().map(|tx| IndexedEthereumTransaction::from(tx).tx).collect_vec();
+
+    ExecutableEthereumBatch::new(ether_txs, Default::default())
+}

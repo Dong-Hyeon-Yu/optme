@@ -8,7 +8,7 @@ use sslab_execution::{
     types::{ExecutableEthereumBatch, ExecutionResult, IndexedEthereumTransaction},
 };
 use std::sync::Arc;
-use tracing::warn;
+use tracing::{info, warn};
 
 use crate::{
     address_based_conflict_graph::FastHashMap,
@@ -724,10 +724,9 @@ impl ScheduledInfo {
 
         // store final schedule information
         let mut schedule: Vec<Vec<AbortedTransaction>> = vec![];
+        aborted_txs.sort_unstable_by_key(|tx| tx.id());
 
         if cfg!(not(feature = "disable-rescheduling")) {
-            aborted_txs.sort_unstable_by_key(|tx| tx.id());
-
             for tx in aborted_txs.iter() {
                 let read_keys = tx.read_keys();
                 let write_keys = tx.write_keys();
@@ -749,6 +748,11 @@ impl ScheduledInfo {
                         schedule.push(vec![tx.clone()]);
                     }
                 };
+            }
+        } else {
+            if !aborted_txs.is_empty() {
+                // println!("aboted txs: {:?}", aborted_txs.len());
+                schedule.push(aborted_txs);
             }
         }
 

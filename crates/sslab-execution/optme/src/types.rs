@@ -89,7 +89,7 @@ impl SimulatedTransaction {
 
 #[derive(Clone, Debug)]
 pub struct AbortedTransaction {
-    raw_tx: IndexedEthereumTransaction,
+    pub(crate) raw_tx: IndexedEthereumTransaction,
     prev_write_keys: hashbrown::HashSet<H256>,
     prev_read_keys: hashbrown::HashSet<H256>,
 }
@@ -111,8 +111,14 @@ impl AbortedTransaction {
     }
 
     #[inline]
-    pub(crate) fn raw_tx(&self) -> &IndexedEthereumTransaction {
+    pub fn raw_tx(&self) -> &IndexedEthereumTransaction {
         &self.raw_tx
+    }
+}
+
+impl From<AbortedTransaction> for IndexedEthereumTransaction {
+    fn from(value: AbortedTransaction) -> Self {
+        value.raw_tx
     }
 }
 
