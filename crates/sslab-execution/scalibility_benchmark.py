@@ -11,10 +11,10 @@ class BenchmarkType:
     
 
 class ExecutionModel:
-    OPTME = "-p sslab-execution-optme --features=optme"
-    NEZHA = "-p sslab-execution-optme --features=vanilla-kdg"
-    BLOCKSTM = "-p sslab-execution-blockstm"
-    SERIAL = "-p sslab-execution-serial"
+    OPTME = ("optme", "-p sslab-execution-optme --features=optme")
+    NEZHA = ("nezha", "-p sslab-execution-optme --features=vanilla-kdg")
+    BLOCKSTM = ("blockstm", "-p sslab-execution-blockstm")
+    SERIAL = ("serial", "-p sslab-execution-serial")
     
 
 
@@ -28,8 +28,8 @@ for model in execution_models:
         if BenchmarkType.THROUGHPUT_BLOCK_SIZE in benchmarks:
             
             # measure throughput according to blocksize
-            filename = f"{datetime.today().strftime('%Y-%m-%d-%H:%M')}-{nthreads}-blocksize.log"
-            cmd = f"RAYON_NUM_THREADS={nthreads} cargo bench {model}" 
+            filename = f"{datetime.today().strftime('%Y-%m-%d-%H:%M')}-{model[0]}-{nthreads}-blocksize.log"
+            cmd = f"RAYON_NUM_THREADS={nthreads} cargo bench {model[1]}" 
             cmd += f" -- blocksize > {filename} 2>&1"
             print(cmd)
             subprocess.call(cmd, shell=True, stderr=STDOUT)
