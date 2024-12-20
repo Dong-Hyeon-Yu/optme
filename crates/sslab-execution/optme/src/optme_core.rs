@@ -134,8 +134,8 @@ impl ConcurrencyLevelManager {
             let rw_sets = self
                 ._re_execute(
                     tx_list_to_re_execute
-                        .iter()
-                        .map(|tx| tx.raw_tx().clone())
+                        .into_iter()
+                        .map(|tx| tx.into_raw_tx())
                         .collect(),
                 )
                 .await;
@@ -270,6 +270,7 @@ impl ConcurrencyLevelManager {
     }
 
     //TODO: (optimization) commit the last write of each key
+    #[cfg(not(feature = "latency"))]
     pub async fn _concurrent_commit(&self, scheduled_txs: Vec<Vec<FinalizedTransaction>>) {
         let storage = self.global_state.clone();
 
@@ -290,6 +291,34 @@ impl ConcurrencyLevelManager {
         });
 
         let _ = recv.await;
+    }
+
+    #[cfg(feature = "latency")]
+    pub async fn _concurrent_commit(&self, scheduled_txs: Vec<Vec<FinalizedTransaction>>) -> u128 {
+        let storage = self.global_state.clone();
+
+        // Parallel simulation requires heavy cpu usages.
+        // CPU-bound jobs would make the I/O-bound tokio threads starve.
+        // To this end, a separated thread pool need to be used for cpu-bound jobs.
+        // a new thread is created, and a new thread pool is created on the thread. (specifically, rayon's thread pool is created)
+        let (send, recv) = tokio::sync::oneshot::channel();
+        rayon::spawn(move || {
+            let _storage = &storage;
+
+            let mut latency = 0u128;
+            let clock = std::time::Instant::now();
+            for txs_to_commit in scheduled_txs {
+                let tx_len = txs_to_commit.len() as u128;
+                txs_to_commit.into_par_iter().for_each(|tx| {
+                    let effect = tx.extract();
+                    _storage.apply_local_effect(effect)
+                });
+                latency += tx_len * clock.elapsed().as_micros();
+            }
+            let _ = send.send(latency);
+        });
+
+        recv.await.unwrap()
     }
 
     async fn _validate_optimistic_assumption(
@@ -341,33 +370,34 @@ impl ConcurrencyLevelManager {
         self._concurrent_commit(scheduled_txs).await;
     }
 }
-#[cfg(feature = "latency")]
+// #[cfg(feature = "latency")]
 use tokio::time::Instant;
 
-#[cfg(feature = "latency")]
+// #[cfg(feature = "latency")]
 #[async_trait::async_trait]
 pub trait LatencyBenchmark {
     async fn _execute_and_return_latency(
         &self,
         consensus_output: Vec<ExecutableEthereumBatch>,
-    ) -> (u128, u128, u128, u128, u128, u128);
+    ) -> (u128, u128, u128, u128, u128, u128, f64);
 
     async fn _validate_optimistic_assumption_and_return_latency(
         &self,
-        rw_set: Vec<SimulatedTransaction>,
-    ) -> (Option<Vec<SimulatedTransaction>>, u128, u128);
+        rw_set: Vec<ReExecutedTransaction>,
+    ) -> (Option<Vec<ReExecutedTransaction>>, u128, u128);
 }
 
-#[cfg(feature = "latency")]
+// #[cfg(feature = "latency")]
 #[async_trait::async_trait]
 impl LatencyBenchmark for ConcurrencyLevelManager {
     async fn _execute_and_return_latency(
         &self,
         consensus_output: Vec<ExecutableEthereumBatch>,
-    ) -> (u128, u128, u128, u128, u128, u128) {
+    ) -> (u128, u128, u128, u128, u128, u128, f64) {
         let (_, tx_list) = Self::_unpack_batches(consensus_output).await;
+        let total_tx_len = tx_list.len();
 
-        let scheduled_aborted_txs: Vec<Vec<Arc<Transaction>>>;
+        let scheduled_aborted_txs: Vec<Vec<AbortedTransaction>>;
 
         let mut simulation_latency = 0;
         let mut scheduling_latency = 0;
@@ -376,6 +406,7 @@ impl LatencyBenchmark for ConcurrencyLevelManager {
         let mut commit_latency = 0;
 
         let total_latency = Instant::now();
+        let mut tx_latency = 0u128;
         // 1st execution
         {
             let latency = Instant::now();
@@ -394,8 +425,10 @@ impl LatencyBenchmark for ConcurrencyLevelManager {
                 .await;
             scheduling_latency += latency.elapsed().as_micros();
 
+            let tx_len = scheduled_txs.len() as u128;
             let latency = Instant::now();
-            self._concurrent_commit(scheduled_txs).await;
+            tx_latency += total_latency.elapsed().as_micros() * tx_len
+                + self._concurrent_commit(scheduled_txs).await;
             commit_latency += latency.elapsed().as_micros();
 
             scheduled_aborted_txs = aborted_txs;
@@ -408,13 +441,14 @@ impl LatencyBenchmark for ConcurrencyLevelManager {
             //                                                no
             //                                                 |
             //                                          (2) commit
-            let txss = tx_list_to_re_execute
+            let txss: Vec<IndexedEthereumTransaction> = tx_list_to_re_execute
                 .into_par_iter()
-                .map(|tx| tx.raw_tx().clone())
+                .map(|tx| tx.into_raw_tx())
                 .collect();
+            let tx_len = txss.len() as u128;
 
             let latency = Instant::now();
-            let rw_sets = self._simulate(txss).await;
+            let rw_sets = self._re_execute(txss).await;
             v_exec_latency += latency.elapsed().as_micros();
 
             match self
@@ -433,6 +467,8 @@ impl LatencyBenchmark for ConcurrencyLevelManager {
                     tracing::debug!("invalidated txs: {:?}", invalid_txs);
                 }
             }
+
+            tx_latency += total_latency.elapsed().as_micros() * tx_len;
         }
 
         (
@@ -442,21 +478,17 @@ impl LatencyBenchmark for ConcurrencyLevelManager {
             v_exec_latency,
             v_val_latency,
             commit_latency,
+            tx_latency as f64 / total_tx_len as f64,
         )
     }
 
     async fn _validate_optimistic_assumption_and_return_latency(
         &self,
-        rw_set: Vec<SimulatedTransaction>,
-    ) -> (Option<Vec<SimulatedTransaction>>, u128, u128) {
+        rw_set: Vec<ReExecutedTransaction>,
+    ) -> (Option<Vec<ReExecutedTransaction>>, u128, u128) {
         if rw_set.len() == 1 {
-            let scheduled_txs = vec![rw_set
-                .into_iter()
-                .map(ScheduledTransaction::from)
-                .collect_vec()];
-
             let latency = Instant::now();
-            self._concurrent_commit(scheduled_txs).await;
+            self._concurrent_commit_2(rw_set).await;
 
             return (None, 0, latency.elapsed().as_micros());
         }
@@ -470,20 +502,13 @@ impl LatencyBenchmark for ConcurrencyLevelManager {
 
             let mut write_set = hashbrown::HashSet::<H256>::new();
             for tx in rw_set.into_iter() {
-                match tx.write_set() {
-                    Some(ref set) => {
-                        if (set.len() <= write_set.len() && set.is_disjoint(&write_set)) // select smaller set using short-circuit evaluation
-                            || (set.len() > write_set.len() && write_set.is_disjoint(set))
-                        {
-                            write_set.extend(set);
-                            valid_txs.push(tx);
-                        } else {
-                            invalid_txs.push(tx);
-                        }
-                    }
-                    None => {
-                        valid_txs.push(tx);
-                    }
+                let set = tx.write_set();
+
+                if is_disjoint(&set, &write_set) {
+                    write_set.extend(set);
+                    valid_txs.push(tx);
+                } else {
+                    invalid_txs.push(tx);
                 }
             }
 
@@ -497,17 +522,8 @@ impl LatencyBenchmark for ConcurrencyLevelManager {
         let (valid_txs, invalid_txs) = recv.await.unwrap();
         let validation_latency = latency.elapsed().as_micros();
 
-        let scheduled_txs = vec![tokio::task::spawn_blocking(move || {
-            valid_txs
-                .into_par_iter()
-                .map(ScheduledTransaction::from)
-                .collect()
-        })
-        .await
-        .expect("fail to spawn a task for convert SimulatedTransaction to ScheduledTransaction")];
-
         let commit_latency = Instant::now();
-        self._concurrent_commit(scheduled_txs).await;
+        self._concurrent_commit_2(valid_txs).await;
 
         (
             invalid_txs,

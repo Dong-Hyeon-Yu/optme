@@ -111,8 +111,8 @@ impl AbortedTransaction {
     }
 
     #[inline]
-    pub(crate) fn raw_tx(&self) -> &IndexedEthereumTransaction {
-        &self.raw_tx
+    pub fn into_raw_tx(self) -> IndexedEthereumTransaction {
+        self.raw_tx
     }
 }
 

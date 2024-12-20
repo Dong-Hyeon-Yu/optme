@@ -54,6 +54,17 @@ def _parse_latency(log):
     
     return None
 
+def _parse_tx_latency(log):
+    if tmp := findall(r'TX latency: (\d+\.\d+)', log):
+        tx_latency = [float(s) for s in tmp]
+        
+        tmp = findall(r'Total: (\d+\.\d+)', log)
+        block_latency = [float(s) for s in tmp]
+        
+        return block_latency, tx_latency
+    
+    return None
+
 def result(log):
     result = ""
     
@@ -68,6 +79,12 @@ def result(log):
         result += "\n[Latency (Ktps; simulation (ms); scheduling (ms); v_exec (ms); v_val (ms); commit (ms); other (ms))]\n"
         for k, si, sc, ve, vv, c, o in zip(ktps, simulation, scheduling, v_exec, v_val, commit, other, strict=True):
             result += f"{k} {si} {sc} {ve} {vv} {c} {o}\n"
+    
+    if latency := _parse_tx_latency(log):
+        block_latency, tx_latency = latency
+        result += "\n[Block latency (ms); TX latency (ms)]\n"
+        for b, tx in zip(block_latency, tx_latency, strict=True):
+            result += f"{b} {tx}\n"
     
     construct, sort, reorder, extraction = _parse_scheduling(log)
     if construct:
